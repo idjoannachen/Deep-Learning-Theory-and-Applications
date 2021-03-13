@@ -1,3 +1,4 @@
+# prob4.py
 """ Neural Network.
 A 2-Hidden Layers Fully Connected Neural Network (a.k.a Multilayer Perceptron)
 implementation with PyTorch. This example is using the MNIST database
@@ -98,7 +99,7 @@ class FCNN(nn.Module):
             h2 = self.nonlin2(self.layer2(h1))
             h3 = self.nonlin3(self.layer3(h2))
             
-        output = self.layer4(h2)
+        output = self.layer4(h3)
 
         return output
 
@@ -148,10 +149,14 @@ trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
 # main training function - example
 # ##################################
 
-def train():
-
-    model = FCNN(num_input, num_classes)
-    optimizer = optim.SGD(model.parameters(), lr=learning_rate)
+def train(loss_function, l1_lambda = 0, l2_lambda = 0, drop_p = None):
+    # l1_lambda = 0#0.001, 0.005
+    # l2_lambda = 0#0.001 0.01 0.1
+    loss_fxns = {'MSE': nn.MSELoss(reduction = 'mean'), 'CE': nn.CrossEntropyLoss()}
+    model = FCNN(num_input, num_classes, p = drop_p)
+    optimizer = optim.SGD(model.parameters(), lr=learning_rate, weight_decay = l2_lambda)
+    # loss_function = nn.MSELoss()
+    # loss_function = nn.CrossEntropyLoss()
     
     # initialize loss list
     metrics = [[0, 0]]
@@ -165,6 +170,8 @@ def train():
 
             # unpack batch
             data, labels = batch
+            if loss_function == 'MSE':
+                labels = to_one_hot(labels)
 
             # get predictions from model
             pred = model(data)
@@ -178,10 +185,16 @@ def train():
             # torch.nn to train the model using
             # 1. MSE Loss
             # 2. Cross-Entropy Loss
-
+            l1_norm = torch.tensor(0, dtype = torch.float32)
+            for param in model.parameters():
+              l1_norm += param.norm(p=1)
             # loss = some_loss_function(pred, labels)
-
+            # import pdb; pdb.set_trace()
+            # pred = torch.argmax(pred, dim = 1)
+            # import pdb; pdb.set_trace()
+            loss = loss_fxns[loss_function](pred, labels)
             # backpropagate the loss
+            loss = loss + (l1_norm * l1_lambda)
             loss.backward()
 
             # update parameters
@@ -214,9 +227,108 @@ def train():
 # Ex. 
 # metric_array, trained_model = train()
 
-def plot_accuracies_v_epoch(metric_array):
+def plot_accuracies_v_epoch(metric_array, name, metrics):
     pass
 
 # HINT for 4.1 AND 4.2: 
 # we can pass in arguments to our training function that
-# may be hyperparameters, loss functions, regularization terms etc.
+# may be hyperparameters, loss functions, regularization terms etc. 
+
+
+l1_lambda = [0.001, 0.005]
+l2_lambda = [0.001, 0.01, 0.1]
+loss_fxns = ['MSE', 'CE']
+p = [0.05,0.1,0.5]
+space = np.linspace(0, num_epochs, 1001)
+
+train_loss = {}
+test_loss = {}
+
+#4.1
+for i in loss_fxns:
+    metrics, _ = train(loss_function = i)
+    train_loss[str(i)] = metrics[:, 0]
+    test_loss[str(i)] = metrics[:, 1]
+
+for i, j in train_loss.items():
+    plt.plot(space, j, label = 'training_loss_function=' + i)
+plt.legend()
+plt.show()
+
+for i, j in test_loss.items():
+    plt.plot(space, j, label = 'testing_loss_function=' + i)
+plt.legend()
+plt.show()
+
+
+#4.2
+#l1
+l1_train = {}
+l1_test = {}
+gen_gap = {}
+for i in l1_lambda:
+    metrics, _ = train(loss_function = 'CE', l1_lambda = i)
+    l1_train[str(i)] = metrics[:, 0]
+    l1_test[str(i)] = metrics[:, 1]
+    gen_gap[str(i)] = (metrics[:, 0] - metrics[:, 1])
+
+
+for i in l1_lambda:
+    plt.plot(space, l1_train[str(i)], label = 'train acc l1 = ' + str(i))
+    plt.plot(space, l1_test[str(i)], label = 'test acc l1 = ' + str(i))
+    plt.plot(space, gen_gap[str(i)], label = 'generalization gap')
+    plt.legend()
+    plt.show()
+
+
+#l2
+l2_train = {}
+l2_test = {}
+gen_gap = {}
+for i in l2_lambda:
+    metrics, _ = train(loss_function = 'CE', l2_lambda = i)
+    l2_train[str(i)] = metrics[:, 0]
+    l2_test[str(i)] = metrics[:, 1]
+    gen_gap[str(i)] = (metrics[:, 0] - metrics[:, 1])
+
+
+for i in l2_lambda:
+    plt.plot(space, l2_train[str(i)], label = 'train acc l2 = ' + str(i))
+    plt.plot(space, l2_test[str(i)], label = 'test acc l2 = ' + str(i))
+    plt.plot(space, gen_gap[str(i)], label = 'generalization gap')
+    plt.legend()
+    plt.show()
+
+
+
+#dropout
+drop_train = {}
+drop_test = {}
+gen_gap = {}
+for i in p:
+    metrics, _ = train(loss_function = 'CE', drop_p = i)
+    drop_train[str(i)] = metrics[:, 0]
+    drop_test[str(i)] = metrics[:, 1]
+    gen_gap[str(i)] = (metrics[:, 0] - metrics[:, 1])
+
+
+for i in p:
+    plt.plot(space, drop_train[str(i)], label = 'train acc drop_prob = ' + str(i))
+    plt.plot(space, drop_test[str(i)], label = 'test acc drop_prob = ' + str(i))
+    plt.plot(space, gen_gap[str(i)], label = 'generalization gap')
+    plt.legend()
+    plt.show()
+
+
+#all_test
+for key, val in l1_test.items():
+    plt.plot(space, val, label = 'test acc l1 = ' + key)
+
+for key, val in l2_test.items():
+    plt.plot(space, val, label = 'test acc l2 = ' + key)
+
+for key, val in drop_test.items():
+    plt.plot(space, val, label = 'test acc drop_prob = ' + key)
+
+plt.legend()
+plt.show()
