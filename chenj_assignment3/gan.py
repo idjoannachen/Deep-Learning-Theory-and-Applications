@@ -1,3 +1,4 @@
+# GAN.py
 """:
 Deep Learning Assignment 3
 Conditional GAN Skeleton Code.
@@ -9,6 +10,7 @@ import torch
 import torch.nn as nn
 from torchvision import transforms, datasets
 from torch import optim as optim
+from torch.autograd import Variable
 # for visualization
 from matplotlib import pyplot as plt
 import math
@@ -20,7 +22,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # loading the dataset
 training_parameters = {
     "img_size": 28,
-    "n_epochs": 24,
+    "n_epochs":24,
     "batch_size": 64,
     "learning_rate_generator": 0.0002,
     "learning_rate_discriminator": 0.0002,
@@ -80,7 +82,11 @@ class Generator(nn.Module):
         nn.Linear(1024, output_dim),
         nn.Tanh()
     )
-  def forward(self, x, labels):
+  def forward(self, x, labels = None):
+      # emb = self.label_embedding(labels)
+      # import pdb; pdb.set_trace()
+      # x = torch.cat((x, emb))
+      # x = torch.cat((self.label_embedding(labels).squeeze(), x), -1)
       output = self.hidden_layer1(x)
       output = self.hidden_layer2(output)
       output = self.hidden_layer3(output)
@@ -115,7 +121,7 @@ class Discriminator(nn.Module):
         )
 
     def forward(self, x, labels=None): # labels to be used in 5.4.
-        output = self.hidden_layer1(x)
+        output = self.hidden_layer1(x.view(x.size(0), -1))
         output = self.hidden_layer2(output)
         output = self.hidden_layer3(output)
         output = self.hidden_layer4(output)
@@ -129,7 +135,7 @@ discriminator_optimizer = optim.Adam(discriminator.parameters(), lr=training_par
 generator_optimizer = optim.Adam(generator.parameters(), lr=training_parameters['learning_rate_generator'])
 
 # TODO: Implement the GAN training procedure.
-loss =
+loss = nn.BCELoss() 
 def train_generator(batch_size):
     """
     Performs a training step on the generator by
@@ -144,8 +150,18 @@ def train_generator(batch_size):
     generator_optimizer.zero_grad()
     # 1. Create a new batch of fake images (since the discriminator has just been trained on the old ones)
     noise = torch.randn(batch_size,100).to(device) # whenever you create new variables for the model to process, send them to the device, like this.
-    # ...
-    return loss
+    gen_labels = Variable(torch.randint(low = 0, high = 10, size = (batch_size, 1), dtype = torch.long)).to(device)
+    fake_data = generator(noise)
+
+    y_real = Variable(torch.ones(batch_size, 1, device = device))
+
+    pred_y = discriminator(fake_data, gen_labels)
+    gen_loss = loss(pred_y, y_real)
+
+    gen_loss.backward()
+    generator_optimizer.step()
+
+    return gen_loss.item()
 
 def train_discriminator(batch_size, images, labels=None): # labels to be used in 5.4.
     """
@@ -160,23 +176,42 @@ def train_discriminator(batch_size, images, labels=None): # labels to be used in
     Returns the average loss over the batch.
     """
     # TODO: And this function should perform a single training step on the discriminator
+    discriminator_optimizer.zero_grad()
+    y_real = Variable(torch.ones(batch_size, 1, device = device, dtype = torch.long))
+    y_fake = Variable(torch.zeros(batch_size, 1, device = device, dtype = torch.long))
 
-    return loss
+    pred_y_real = discriminator(images)
+    real_loss = loss(pred_y_real.float(), y_real.float())
+
+    noise = torch.randn(batch_size,100).to(device) # whenever you create new variables for the model to process, send them to the device, like this.
+    fake_data = generator(noise)
+
+    pred_y_fake = discriminator(fake_data.detach(), y_fake)
+    fake_loss = loss(pred_y_fake.float(), y_fake.float())
+
+    total_loss = (real_loss + fake_loss) / 2
+
+    total_loss.backward()
+    discriminator_optimizer.step()
+    return total_loss.item()
 
 
 for epoch in range(training_parameters['n_epochs']):
     G_loss = []  # for plotting the losses over time
     D_loss = []
     for batch, (imgs, labels) in enumerate(train_loader):
+        imgs = imgs.to(device)
+        labels = labels.to(device)
         batch_size = labels.shape[0]  # if the batch size doesn't evenly divide the dataset length, this may change on the last epoch.
-        lossG = train_generator(batch_size)
+        for _ in range(3):
+          lossG = train_generator(batch_size)
         G_loss.append(lossG)
         lossD = train_discriminator(batch_size, imgs, labels)
         D_loss.append(lossD)
 
         if ((batch + 1) % 500 == 0 and (epoch + 1) % 1 == 0):
             # Display a batch of generated images and print the loss
-            print("Training Steps Completed: ", batch)
+            print("Training Steps Completed: ", batch * epoch)
             with torch.no_grad():  # disables gradient computation to speed things up
                 noise = torch.randn(batch_size, 100).to(device)
                 fake_labels = torch.randint(0, 10, (batch_size,)).to(device)
@@ -186,13 +221,13 @@ for epoch in range(training_parameters['n_epochs']):
                 batch_sqrt = int(training_parameters['batch_size'] ** 0.5)
                 fig, ax = plt.subplots(batch_sqrt, batch_sqrt, figsize=(15, 15))
                 for i, x in enumerate(generated_data):
-                    #ax[math.floor(i / batch_sqrt)][i % batch_sqrt].set_title(
-                        label_descriptions[int(fake_labels[i].item())]) # TODO: In 5.4 you can uncomment this line to add labels to images.
+                    # ax[math.floor(i / batch_sqrt)][i % batch_sqrt].set_title(
+                    #     label_descriptions[int(fake_labels[i].item())]) # TODO: In 5.4 you can uncomment this line to add labels to images.
                     ax[math.floor(i / batch_sqrt)][i % batch_sqrt].imshow(x.detach().numpy(), interpolation='nearest',
                                                                           cmap='gray')
                     ax[math.floor(i / batch_sqrt)][i % batch_sqrt].get_xaxis().set_visible(False)
                     ax[math.floor(i / batch_sqrt)][i % batch_sqrt].get_yaxis().set_visible(False)
                 # plt.show()
-                fig.savefig(f"./results/CGAN_Generations_Epoch_{epoch}")
+                fig.savefig(f"./results/GAN_Generations_Epoch_{epoch}")
                 print(
                     f"Epoch {epoch}: loss_d: {torch.mean(torch.FloatTensor(D_loss))}, loss_g: {torch.mean(torch.FloatTensor(G_loss))}")
