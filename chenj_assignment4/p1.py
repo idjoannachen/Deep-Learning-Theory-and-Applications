@@ -11,9 +11,9 @@ from torchvision.utils import save_image, make_grid
 
 import torchvision
 
-import sys
-sys.argv=['']
-del sys
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
+import itertools
 
 # from einops import rearrange, reduce
 
@@ -67,14 +67,20 @@ def test(args, model, device, test_loader, epoch):
     test_loss = 0
     correct = 0
 
+    target_all = torch.zeros(0, 1).to(device)
+    pred_all = torch.zeros(0, 1).to(device)
+
     # stop tracking gradients
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
             output = model(data)
-            test_loss += F.nll_loss(output, target, reduction='sum').item() # sum up batch loss
-            pred = output.argmax(dim=1, keepdim=True) # get the index of the max log-probability
+            test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
+            pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(target.view_as(pred)).sum().item()
+
+            target_all = torch.cat((target_all, target.view_as(pred)), dim=0)
+            pred_all = torch.cat((pred_all, pred), dim=0)
 
     test_loss /= len(test_loader.dataset)
 
@@ -90,16 +96,24 @@ def test(args, model, device, test_loader, epoch):
     #############################################
 
 
-    # fill in code here 
+    # fill in code here
+
+    if epoch == args.epochs:
+        weight_tensor = model.conv1.weight.data.cpu()
+        target_all = target_all.cpu()
+        pred_all = pred_all.cpu()
+
+        # print(weight_tensor.shape)
+        plot_filters_single_channel(weight_tensor)
+
+        cm = confusion_matrix(target_all, pred_all)
+
+        plt.figure(figsize=(10,10))
+        plot_confusion_matrix(cm, test_loader.dataset.classes)
 
 
-
-
-
-       
-
-if __name__ == '__main__':
-        # Training settings
+def main():
+    # Training settings
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
     parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: 64)')
@@ -111,14 +125,14 @@ if __name__ == '__main__':
                         help='learning rate (default: 0.01)')
     parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
                         help='SGD momentum (default: 0.5)')
-    parser.add_argument('--no-cuda', action='store_true', default=True,
+    parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status')
    
-    parser.add_argument('--save-model', action='store_true', default=False,
+    parser.add_argument('--save-model', action='store_true', default=True,
                         help='For Saving the current Model')
     args = parser.parse_args()
     use_cuda = not args.no_cuda and torch.cuda.is_available()
@@ -164,6 +178,64 @@ if __name__ == '__main__':
     if (args.save_model):
         torch.save(model.state_dict(),"mnist_cnn.pt")
 
+
+def plot_filters_single_channel(t):
+    # kernels depth * number of kernels
+    nplots = t.shape[0]
+    ncols = 8
+
+    nrows = int(nplots / ncols)
+    # convert tensor to numpy image
+    npimg = np.array(t.numpy(), np.float32)
+
+    count = 0
+    fig = plt.figure(figsize=(ncols, nrows))
+
+    # looping through all the kernels in each channel
+    for i in range(t.shape[0]):
+        count += 1
+        ax1 = fig.add_subplot(nrows, ncols, count)
+        npimg = np.array(t[i, 0].numpy(), np.float32)
+        npimg = (npimg - np.mean(npimg)) / np.std(npimg)
+        npimg = np.minimum(1, np.maximum(0, (npimg + 0.5)))
+        ax1.imshow(npimg)
+        ax1.set_title('Kernel ' + str(i))
+        ax1.axis('off')
+        ax1.set_xticklabels([])
+        ax1.set_yticklabels([])
+
+    plt.tight_layout()
+    plt.show()
+
+
+
+def plot_confusion_matrix(cm, classes, normalize=False, title='Confusion matrix', cmap=plt.cm.Blues):
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print('Confusion matrix, without normalization')
+
+    print(cm)
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes, rotation=45)
+    plt.yticks(tick_marks, classes)
+
+    fmt = '.2f' if normalize else 'd'
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        plt.text(j, i, format(cm[i, j], fmt), horizontalalignment="center", color="white" if cm[i, j] > thresh else "black")
+
+    plt.tight_layout()
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
+       
+
+if __name__ == '__main__':
+    main()
 
 
 
